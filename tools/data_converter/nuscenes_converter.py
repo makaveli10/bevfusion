@@ -381,7 +381,6 @@ def get_data(
     for cam in camera_types:
         cam_intrinsics = all_cam_intrinsics[cam]
         cam_info = obtain_sensor2top_test(
-    e2g_r_mat = Quaternion(e2g_r[0]).rotation_matrix
             images[cam], l2e_t, l2e_r_mat, e2g_t, e2g_r, e2g_r_mat, cam, cam_translations, cam_rotations
         )
 
