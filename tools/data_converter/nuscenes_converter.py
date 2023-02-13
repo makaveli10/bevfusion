@@ -415,7 +415,7 @@ def obtain_sensor2top_test(data, l2e_t, l2e_r_mat, e2g_t, e2g_r, e2g_r_mat, sens
         rotation = cam_rotations[sensor_type]
     else:
         translation = l2e_t
-        rotation = l2e_r
+        rotation = lidar_rotation
     sweep = {
         "data": data,
         "type": sensor_type,
@@ -431,8 +431,10 @@ def obtain_sensor2top_test(data, l2e_t, l2e_r_mat, e2g_t, e2g_r, e2g_r_mat, sens
 
     # obtain the RT from sensor to Top LiDAR
     # sweep->ego->global->ego'->lidar
-    l2e_r_s_mat = Quaternion(l2e_r_s).rotation_matrix
-    e2g_r_s_mat = Quaternion(e2g_r_s).rotation_matrix
+    # print(len(l2e_r_s), l2e_r_s[0].shape)
+
+    l2e_r_s_mat = Quaternion(l2e_r_s[0]).rotation_matrix
+    e2g_r_s_mat = Quaternion(e2g_r_s[0]).rotation_matrix
     R = (l2e_r_s_mat.T @ e2g_r_s_mat.T) @ (
         np.linalg.inv(e2g_r_mat).T @ np.linalg.inv(l2e_r_mat).T
     )
