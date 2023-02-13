@@ -419,8 +419,10 @@ def get_sample_data():
         ego_pose['translation'], ego_pose['rotation'], cam_translations, cam_rotations
 
 
-def get_data():
+def get_data(
     images, points, all_cam_intrinsics, lidar2ego_translation, lidar2ego_rotation,
+):
+    
     ego2global_translation, ego2global_rotation, cam_translations, cam_rotations = get_sample_data()
     info = {
         "points": points,

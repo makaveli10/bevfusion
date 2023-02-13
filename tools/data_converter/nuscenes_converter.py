@@ -381,21 +381,22 @@ def get_data(
     for cam in camera_types:
         cam_intrinsics = all_cam_intrinsics[cam]
         cam_info = obtain_sensor2top_test(
-            images[cam], l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, cam, cam_translations, cam_rotations
+    e2g_r_mat = Quaternion(e2g_r[0]).rotation_matrix
+            images[cam], l2e_t, l2e_r_mat, e2g_t, e2g_r, e2g_r_mat, cam, cam_translations, cam_rotations
         )
 
-        cam_info.update(camera_intrinsics=camera_intrinsics)
+        cam_info.update(camera_intrinsics=cam_intrinsics)
         info["cams"].update({cam: cam_info})
     # obtain sweeps
     sweep = obtain_sensor2top_test(
-        lidar_path, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, "lidar", lidar_rotation=l2e_r
+        lidar_path, l2e_t, l2e_r_mat, e2g_t, e2g_r, e2g_r_mat, "lidar", lidar_rotation=l2e_r
     )
     info["sweeps"] = [sweep]
     print(info["sweeps"])
     xx
 
 
-def obtain_sensor2top_test(data, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, sensor_type="lidar", cam_translations=None, cam_rotations=None, lidar_rotation=None):
+def obtain_sensor2top_test(data, l2e_t, l2e_r_mat, e2g_t, e2g_r, e2g_r_mat, sensor_type="lidar", cam_translations=None, cam_rotations=None, lidar_rotation=None):
     """Obtain the info with RT matric from general sensor to Top LiDAR.
 
     Args:
