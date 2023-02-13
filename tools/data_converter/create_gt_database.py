@@ -186,13 +186,13 @@ def create_groundtruth_database(
                         load_dim=5,
                         use_dim=5,
                     ),
-                    dict(
-                        type="LoadPointsFromMultiSweeps",
-                        sweeps_num=10,
-                        use_dim=[0, 1, 2, 3, 4],
-                        pad_empty_sweeps=True,
-                        remove_close=True,
-                    ),
+                    # dict(
+                    #     type="LoadPointsFromMultiSweeps",
+                    #     sweeps_num=10,
+                    #     use_dim=[0, 1, 2, 3, 4],
+                    #     pad_empty_sweeps=True,
+                    #     remove_close=True,
+                    # ),
                     dict(
                         type="LoadAnnotations3D", with_bbox_3d=True, with_label_3d=True
                     ),

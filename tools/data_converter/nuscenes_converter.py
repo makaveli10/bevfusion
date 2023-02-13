@@ -73,7 +73,6 @@ def create_nuscenes_infos(
     else:
         raise ValueError("unknown")
 
-    # filter existing scenes.
     available_scenes = get_available_scenes(nusc)
     available_scene_names = [s["name"] for s in available_scenes]
     train_scenes = list(filter(lambda x: x in available_scene_names, train_scenes))
@@ -95,10 +94,12 @@ def create_nuscenes_infos(
         print(
             "train scene: {}, val scene: {}".format(len(train_scenes), len(val_scenes))
         )
-    train_nusc_infos, val_nusc_infos = _fill_trainval_infos(
+    # train_nusc_infos, val_nusc_infos = _fill_trainval_infos(
+    #     nusc, train_scenes, val_scenes, test, max_sweeps=max_sweeps
+    # )
+    train_nusc_infos, val_nusc_infos = _fill_trainval_infos_test(
         nusc, train_scenes, val_scenes, test, max_sweeps=max_sweeps
     )
-
     metadata = dict(version=version)
     if test:
         print("test sample: {}".format(len(train_nusc_infos)))
@@ -241,6 +242,7 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
             else:
                 break
         info["sweeps"] = sweeps
+        print(len(info["sweeps"]))
         # obtain annotation
         if not test:
             annotations = [
@@ -291,6 +293,159 @@ def _fill_trainval_infos(nusc, train_scenes, val_scenes, test=False, max_sweeps=
 
     return train_nusc_infos, val_nusc_infos
 
+
+def _fill_trainval_infos_test(nusc, train_scenes, val_scenes, test=False, max_sweeps=10):
+    for sample in mmcv.track_iter_progress(nusc.sample):
+        lidar_token = sample["data"]["LIDAR_TOP"]
+        sd_rec = nusc.get("sample_data", sample["data"]["LIDAR_TOP"])
+        cs_record = nusc.get("calibrated_sensor", sd_rec["calibrated_sensor_token"])
+        pose_record = nusc.get("ego_pose", sd_rec["ego_pose_token"])
+        location = nusc.get(
+            "log", nusc.get("scene", sample["scene_token"])["log_token"]
+        )["location"]
+        lidar_path, boxes, _ = nusc.get_sample_data(lidar_token)
+        lidar2ego_translation = cs_record["translation"],
+        lidar2ego_rotation = cs_record["rotation"],
+        ego2global_translation = pose_record["translation"],
+        ego2global_rotation = pose_record["rotation"],
+        
+        # obtain 6 image's information per frame
+        camera_types = [
+            "CAM_FRONT",
+            "CAM_FRONT_RIGHT",
+            "CAM_FRONT_LEFT",
+            "CAM_BACK",
+            "CAM_BACK_LEFT",
+            "CAM_BACK_RIGHT",
+        ]
+        images = {}
+        cam_translations = {}
+        cam_rotations = {}
+        all_cam_intrinsics = {}
+        import cv2
+        for cam in camera_types:
+            cam_path, _, camera_intrinsics = nusc.get_sample_data(sample["data"][cam])
+            sd_rec = nusc.get("sample_data", sample["data"][cam])
+            cs_record = nusc.get("calibrated_sensor", sd_rec["calibrated_sensor_token"])
+            data_path = str(nusc.get_sample_data_path(sd_rec["token"]))
+            if os.getcwd() in data_path:  # path from lyftdataset is absolute path
+                data_path = data_path.split(f"{os.getcwd()}/")[-1]  # relative path
+            cam_translations[cam] = cs_record["translation"]
+            cam_rotations[cam] = cs_record["rotation"]
+            images[cam] = data_path
+            all_cam_intrinsics[cam] = camera_intrinsics
+        
+        # points
+        # scan = np.fromfile(lidar_path, dtype=np.float32)
+        # points = scan.reshape((-1, 5))[:, :4]
+        get_data(images, lidar_path, all_cam_intrinsics, lidar2ego_translation, lidar2ego_rotation,
+            ego2global_translation, ego2global_rotation, cam_translations, cam_rotations
+        )
+
+
+def get_data(
+    images, lidar_path, all_cam_intrinsics, lidar2ego_translation, lidar2ego_rotation,
+    ego2global_translation, ego2global_rotation, cam_translations, cam_rotations
+    ):
+    # print(points.shape)
+    # print(all_cam_intrinsics, lidar2ego_translation, lidar2ego_rotation,
+    # ego2global_translation, ego2global_rotation, cam_translations, cam_rotations)
+    info = {
+        "points": lidar_path,
+        "cams": dict(),
+        "lidar2ego_translation": lidar2ego_translation,
+        "lidar2ego_rotation": lidar2ego_rotation,
+        "ego2global_translation": ego2global_translation,
+        "ego2global_rotation": ego2global_rotation,
+    }
+
+
+    l2e_r = info["lidar2ego_rotation"]
+    l2e_t = info["lidar2ego_translation"]
+    e2g_r = info["ego2global_rotation"]
+    e2g_t = info["ego2global_translation"]
+  
+    l2e_r_mat = Quaternion(l2e_r[0]).rotation_matrix
+    e2g_r_mat = Quaternion(e2g_r[0]).rotation_matrix
+
+    # obtain 6 image's information per frame
+    camera_types = [
+        "CAM_FRONT",
+        "CAM_FRONT_RIGHT",
+        "CAM_FRONT_LEFT",
+        "CAM_BACK",
+        "CAM_BACK_LEFT",
+        "CAM_BACK_RIGHT",
+    ]
+
+    for cam in camera_types:
+        cam_intrinsics = all_cam_intrinsics[cam]
+        cam_info = obtain_sensor2top_test(
+            images[cam], l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, cam, cam_translations, cam_rotations
+        )
+
+        cam_info.update(camera_intrinsics=camera_intrinsics)
+        info["cams"].update({cam: cam_info})
+    # obtain sweeps
+    sweep = obtain_sensor2top_test(
+        lidar_path, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, "lidar", lidar_rotation=l2e_r
+    )
+    info["sweeps"] = [sweep]
+    print(info["sweeps"])
+    xx
+
+
+def obtain_sensor2top_test(data, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, sensor_type="lidar", cam_translations=None, cam_rotations=None, lidar_rotation=None):
+    """Obtain the info with RT matric from general sensor to Top LiDAR.
+
+    Args:
+        l2e_t (np.ndarray): Translation from lidar to ego in shape (1, 3).
+        l2e_r_mat (np.ndarray): Rotation matrix from lidar to ego
+            in shape (3, 3).
+        e2g_t (np.ndarray): Translation from ego to global in shape (1, 3).
+        e2g_r_mat (np.ndarray): Rotation matrix from ego to global
+            in shape (3, 3).
+        sensor_type (str): Sensor to calibrate. Default: 'lidar'.
+
+    Returns:
+        sweep (dict): Sweep information after transformation.
+    """
+    if sensor_type!= "lidar":
+        translation = cam_translations[sensor_type],
+        rotation = cam_rotations[sensor_type]
+    else:
+        translation = l2e_t
+        rotation = l2e_r
+    sweep = {
+        "data": data,
+        "type": sensor_type,
+        "sensor2ego_translation": translation,
+        "sensor2ego_rotation": rotation,
+        "ego2global_translation": e2g_t,
+        "ego2global_rotation": e2g_r,
+    }
+    l2e_r_s = sweep["sensor2ego_rotation"]
+    l2e_t_s = sweep["sensor2ego_translation"]
+    e2g_r_s = sweep["ego2global_rotation"]
+    e2g_t_s = sweep["ego2global_translation"]
+
+    # obtain the RT from sensor to Top LiDAR
+    # sweep->ego->global->ego'->lidar
+    l2e_r_s_mat = Quaternion(l2e_r_s).rotation_matrix
+    e2g_r_s_mat = Quaternion(e2g_r_s).rotation_matrix
+    R = (l2e_r_s_mat.T @ e2g_r_s_mat.T) @ (
+        np.linalg.inv(e2g_r_mat).T @ np.linalg.inv(l2e_r_mat).T
+    )
+    T = (l2e_t_s @ e2g_r_s_mat.T + e2g_t_s) @ (
+        np.linalg.inv(e2g_r_mat).T @ np.linalg.inv(l2e_r_mat).T
+    )
+    T -= (
+        e2g_t @ (np.linalg.inv(e2g_r_mat).T @ np.linalg.inv(l2e_r_mat).T)
+        + l2e_t @ np.linalg.inv(l2e_r_mat).T
+    )
+    sweep["sensor2lidar_rotation"] = R.T  # points @ R.T + T
+    sweep["sensor2lidar_translation"] = T
+    return sweep
 
 def obtain_sensor2top(
     nusc, sensor_token, l2e_t, l2e_r_mat, e2g_t, e2g_r_mat, sensor_type="lidar"

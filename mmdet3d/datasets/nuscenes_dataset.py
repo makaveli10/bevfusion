@@ -112,14 +112,14 @@ class NuScenesDataset(Custom3DDataset):
     CLASSES = (
         "car",
         "truck",
-        "trailer",
+        # "trailer",
         "bus",
-        "construction_vehicle",
+        # "construction_vehicle",
         "bicycle",
         "motorcycle",
         "pedestrian",
-        "traffic_cone",
-        "barrier",
+        # "traffic_cone",
+        # "barrier",
     )
 
     def __init__(

@@ -51,8 +51,11 @@ class CBGSDataset:
         sample_indices = []
 
         frac = 1.0 / len(self.CLASSES)
-        ratios = [frac / v for v in class_distribution.values()]
+        ratios = [frac / v if v != 0.0 else 0.0 for v in class_distribution.values()]
         for cls_inds, ratio in zip(list(class_sample_idxs.values()), ratios):
+            if ratio == 0.0:
+                continue
+            # print(cls_inds)
             sample_indices += np.random.choice(
                 cls_inds, int(len(cls_inds) * ratio)
             ).tolist()

@@ -17,6 +17,9 @@ from mmdet.datasets import replace_ImageToTensor
 from onnxsim import simplify
 from tqdm import tqdm
 
+from torchpack.utils.config import configs
+from mmdet3d.utils import recursive_eval
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="MMDet test (and eval) a model")
@@ -33,20 +36,23 @@ def parse_args():
         "Note that the quotation marks are necessary and that no white space "
         "is allowed.",
     )
-    args = parser.parse_args()
-    return args
+    args, opts = parser.parse_known_args()
+    return args, opts
 
 
 def main():
-    args = parse_args()
+    args, opts = parse_args()
 
-    cfg = Config.fromfile(args.config)
-    if args.cfg_options is not None:
-        cfg.merge_from_dict(args.cfg_options)
+    # cfg = Config.fromfile(args.config)
+    # if args.cfg_options is not None:
+    #     cfg.merge_from_dict(args.cfg_options)
 
+    configs.load(args.config, recursive=True)
+    configs.update(opts)
+
+    cfg = Config(recursive_eval(configs), filename=args.config)
     # set cudnn_benchmark
     torch.backends.cudnn.benchmark = True
-
     cfg.model.pretrained = None
     if isinstance(cfg.data.test, dict):
         cfg.data.test.test_mode = True
@@ -77,25 +83,46 @@ def main():
         model.CLASSES = dataset.CLASSES
 
     model.eval()
-
     with torch.no_grad():
         for data in data_loader:
-            img = [torch.cat([data["img"][0].data[0]] * 6, dim=0)]
-            metas = data["metas"][0].data
 
-            from functools import partial
+            img = data["img"].data[0]
+            points = data["points"].data[0][0]
+            camera2ego = data["camera2ego"].data[0]
+            lidar2ego = data["lidar2ego"].data[0]
+            lidar2camera = data["lidar2camera"].data[0]
+            lidar2image = data["lidar2image"].data[0]
+            camera_intrinsics = data["camera_intrinsics"].data[0]
+            camera2lidar = data["camera2lidar"].data[0]
+            img_aug_matrix = data["img_aug_matrix"].data[0]
+            lidar_aug_matrix = data["lidar_aug_matrix"].data[0]
+            metas = data["metas"].data
+            x = (img, points, camera2ego, lidar2ego, lidar2camera, lidar2image, camera_intrinsics,
+                camera2lidar, img_aug_matrix, lidar_aug_matrix)
+            lidar2img_meta = metas[0][0]["lidar2image"]
 
-            model.forward = partial(
-                model.forward_test,
-                metas=metas,
-                rescale=True,
-            )
+            for i, arr in enumerate(lidar2img_meta):
+                metas[0][0]["lidar2image"][i] = torch.from_numpy(arr)
+            
+            for k, v in metas[0][0].items():
+                print(k, type(v))
+            xx
+            # metas = data["metas"].data
+
+            # from functools import partial
+
+            # model.forward = partial(
+            #     model.forward_test,
+            #     metas=metas,
+            #     rescale=True,
+            # )
 
             torch.onnx.export(
                 model,
-                img,
+                x,
                 "model.onnx",
-                input_names=["input"],
+                input_names=["img", "points", "camera2ego", "lidar2camera", "lidar2ego", "camera_intrinsics", "camera2lidar"
+                            "img_aug_matrix", "lidar_aug_matrix"],
                 opset_version=13,
                 do_constant_folding=True,
             )
